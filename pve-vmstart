@@ -1,0 +1,61 @@
+#! /usr/bin/python3
+from pve.PVEMachine import PVEVm, PVELxc
+from pve.PVEUser import PVEUser
+from pve.PVETools import runCli, DEBUG
+from datetime import datetime
+import json
+import subprocess
+import sys
+import os
+
+def buildLimits():
+    try:
+        file = open('/usr/local/sbin/proxmox-binaries/conf/limits.json', 'r')
+        limits = json.loads(file.read())
+        file.close()
+    except FileNotFoundError:
+        exit(0)
+    adminList = []
+    stdout, stderr = runCli('pveum group list --output-format=json-pretty')
+    if stderr == b'':
+        groups = json.loads(stdout)
+        for group in groups:
+            if group['groupid'] in limits['ADMINISTRATORS']:
+                for user in group['users'].split(','):
+                    if user not in adminList:
+                        adminList.append(user)
+
+    limits['ADMINISTRATORS'] = adminList
+
+    return limits
+
+def checkVMLimits(id, vm):
+    limits = buildLimits()
+    limitCheck = vm.limitsCheck(limits)
+    return limitCheck
+
+if __name__ == "__main__":
+    DEBUG('[o] New entry from pve-vmstart : {}\n'.format(datetime.now()))
+    if len(sys.argv) == 2:
+        vmid = int(sys.argv[1], 10)
+        DEBUG('[-] Starting analysis of {}\n'.format( vmid))
+        vm = None
+        try:
+            vm = PVEVm(vmid)
+        except ValueError:
+            pass
+        
+        if vm is None:
+            try:
+                vm = PVELxc(vmid)
+            except ValueError:
+                DEBUG('\t[x] Unable to find this {}\n'.format(type))
+                exit(1)
+
+        check = checkVMLimits(vmid, vm)
+        if check is True:
+            DEBUG('\t[+] Check of VM configuration pass\n')
+            exit(0)
+        else:
+            DEBUG('\t[x] Check of VM configuration failed\n')
+            exit(1)

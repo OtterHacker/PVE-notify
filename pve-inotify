@@ -1,0 +1,10 @@
+#! /bin/bash
+
+# Monitor User creation
+inotifywait --monitor --format "%e %f" --event modify /etc/pve | while read changed; do if [[ "$changed" == *'user.cfg'* ]]; then /usr/local/sbin/proxmox-binaries/pve-userenv; fi; done &
+
+# Monitor VM creation
+inotifywait --monitor --format "%f" --event modify /etc/pve/nodes/proxmox/qemu-server | while read changed; do /usr/local/sbin/proxmox-binaries/pve-vmcreation VM $changed; done &
+
+# Monitor LXC creation
+inotifywait --monitor --format "%f" --event modify /etc/pve/nodes/proxmox/lxc | while read changed; do /usr/local/sbin/proxmox-binaries/pve-vmcreation LXC $changed; done

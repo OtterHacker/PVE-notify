@@ -1,0 +1,130 @@
+#! /usr/bin/python3
+from pve.PVEMachine import PVEVm, PVELxc
+from pve.PVEUser import PVEUser
+from pve.PVETools import runCli, DEBUG
+from datetime import datetime
+import json
+import subprocess
+import sys
+import os
+
+def buildLimits():
+    #limits = {
+    #    'NOT_REVIEWED': ['105'],                # Restrictions do not apply to these machines
+    #    'ADMINISTRATORS': ['admin','vmadmin'],  # Restrictions do not apply to these groups
+    #    'DISK': 104857600,                      # 100GB disk max
+    #    'RAM': 4000,                            # 4GB RAM max
+    #    'BRIDGE': ['vmbr0'],                    # Use of vmbr0 is forbidden  
+    #    'CORES': 4,                             # 4 cores max per VM
+    #    'SOCKETS': 1,                           # 1 socket max per VM
+    #    'LXCPRIVILEGED': False,                 # Authorize LXC privileged containers
+    #    'MPPATH': ['/tmp'],                     # Authorized LXC mountpoint path
+    #    'PERUSER':{
+    #        'DISK': 204857600,                      # 200GB disk max in total per user
+    #        'RAM': 16000,                           # 16GB RAM max in total per user
+    #        'CORES': 6,                             # 6 cores max per VM
+    #    }
+    #}
+    try:
+        file = open('/usr/local/sbin/proxmox-binaries/conf/limits.json', 'r')
+        limits = json.loads(file.read())
+        file.close()
+    except FileNotFoundError:
+        exit(0)
+    adminList = []
+    stdout, stderr = runCli('pveum group list --output-format=json-pretty')
+    if stderr == b'':
+        groups = json.loads(stdout)
+        for group in groups:
+            if group['groupid'] in limits['ADMINISTRATORS']:
+                for user in group['users'].split(','):
+                    if user not in adminList:
+                        adminList.append(user)
+    
+    data = []
+    try:
+        file = open('/usr/local/sbin/proxmox-binaries/conf/tempUserBypass', 'r')
+        data = [elt.strip() for elt in file.readlines()]
+        file.close()
+        os.remove('/usr/local/sbin/proxmox-binaries/conf/tempUserBypass')
+    except FileNotFoundError:
+        pass
+
+    limits['ADMINISTRATORS'] = adminList + data
+
+    data = []
+    try:
+        file = open('/usr/local/sbin/proxmox-binaries/conf/tempVMBypass', 'r')
+        data = [elt.strip() for elt in file.readlines()]
+        file.close()
+        os.remove('/usr/local/sbin/proxmox-binaries/conf/tempVMBypass')
+    except FileNotFoundError:
+        pass
+    limits['NOT_REVIEWED'] = [int(elt, 10) for elt in limits['NOT_REVIEWED'] + data]
+
+
+    return limits
+
+def checkVMLimits(id, vm):
+    limits = buildLimits()
+    limitCheck = vm.limitsCheck(limits)
+    if limitCheck is not True:
+        vm.selfDestroy()
+    return limitCheck
+
+def checkUserResources(id, vm):
+    limits = buildLimits()
+    owner = vm.owner
+    if owner in limits['ADMINISTRATORS']:
+        DEBUG("\t\t[+] I see you got unlimited user here, everything all right\n")
+        return True
+    
+    if vm.id in limits['NOT_REVIEWED']:
+        DEBUG("\t\t[+] I see you got unlimited VM here, everything all right\n")
+        return True
+
+    users = PVEUser.dumpUsers()
+    for user in users:
+        if user.pveusername == owner:
+            owner = user
+            break
+    owner.loadVMInfo()
+    limitCheck = owner.limitsCheck(limits)
+    if limitCheck is not True:
+        vm.selfDestroy()
+
+    return limitCheck
+
+
+if __name__ == "__main__":
+    DEBUG('[o] New entry from pve-vmcreation : {}\n'.format(datetime.now()))
+    if len(sys.argv) == 3:
+        vmid = int(sys.argv[2].split('.conf')[0], 10)
+        DEBUG('[-] Starting analysis of {} {}\n'.format(sys.argv[1], vmid))
+        type = sys.argv[1]
+        try:
+            if type == 'VM':
+                vm = PVEVm(vmid)
+            else:
+                vm = PVELxc(vmid)
+        except ValueError:
+            DEBUG('\t[x] Unable to find this {}\n'.format(type))
+            exit(0)
+
+        try:
+            vm.lock
+            DEBUG('\t[-] {} is already locked\n'.format(type))
+            exit(0)
+        except AttributeError:
+            pass
+
+        check = checkVMLimits(vmid, vm)
+        if check is True:
+            DEBUG('\t[+] Check of VM configuration pass\n')
+            check = checkUserResources(vmid, vm)
+            if check:
+                DEBUG('\t[+] Check of user ressource usage pass\n')
+            else:
+                DEBUG('\t[x] Check of user ressource usage failed\n')
+        else:
+            DEBUG('\t[+] Check of VM configuration failed\n')

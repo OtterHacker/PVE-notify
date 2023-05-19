@@ -1,0 +1,12 @@
+[Unit]
+Description=Inotify PVE Service
+After=network.target
+
+[Service]
+Type=simple
+Restart=on-failure
+ExecStart=/usr/local/sbin/proxmox-binaries/pve-inotify
+StartLimitIntervalSec=5
+
+[Install]
+WantedBy=multi-user.target

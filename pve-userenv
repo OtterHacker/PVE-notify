@@ -1,0 +1,20 @@
+#! /usr/bin/python3
+import subprocess
+import json
+from pve.PVEUser import PVEUser, PVEGroup
+from pve.PVETools import runCli, DEBUG
+
+users = []
+groups = []
+
+# Extract the users list and the group list
+users = PVEUser.dumpUsers()
+groups = PVEGroup.dumpGroups()
+
+# Remove users already associated with a specific group
+for group in groups:
+    users = group.removePresentPVEUser(users)
+
+# The users list only contains the users not associated with any group
+for user in users:
+    user.createEnv("AzureAD")

@@ -1,0 +1,17 @@
+{
+    "NOT_REVIEWED" : ["105"],             
+    "ADMINISTRATORS": ["admin","vmadmin"],
+    "DISK": 104857600,                    
+    "RAM": 4000,                          
+    "BRIDGE": ["vmbr0"],                  
+    "CORES": 4,                           
+    "SOCKETS": 1,                         
+    "LXCPRIVILEGED": false,               
+    "MPPATH": ["/tmp"],
+    "BOOTSTART": false,                 
+    "PERUSER":{
+        "DISK": 204857600,                
+        "RAM": 16000,                     
+        "CORES": 6                      
+    }
+}
