@@ -5,7 +5,6 @@ from pve.PVEUser import PVEUser, PVEGroup
 from pve.PVETools import runCli, DEBUG
 from datetime import datetime
 
-8
 if __name__ == "__main__":
     DEBUG('[o] New entry from pve-userenv : {}\n'.format(datetime.now()))
 
