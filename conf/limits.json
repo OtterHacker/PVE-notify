@@ -2,7 +2,7 @@
     "NOT_REVIEWED" : ["105"],             
     "ADMINISTRATORS": ["admin","vmadmin"],
     "DISK": 104857600,                    
-    "RAM": 4000,                          
+    "RAM": 4096,                          
     "BRIDGE": ["vmbr0"],                  
     "CORES": 4,                           
     "SOCKETS": 1,                         
@@ -11,7 +11,7 @@
     "BOOTSTART": false,                 
     "PERUSER":{
         "DISK": 204857600,                
-        "RAM": 16000,                     
+        "RAM": 4096,                     
         "CORES": 6                      
     }
 }

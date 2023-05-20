@@ -3,18 +3,23 @@ import subprocess
 import json
 from pve.PVEUser import PVEUser, PVEGroup
 from pve.PVETools import runCli, DEBUG
+from datetime import datetime
 
-users = []
-groups = []
+8
+if __name__ == "__main__":
+    DEBUG('[o] New entry from pve-userenv : {}\n'.format(datetime.now()))
 
-# Extract the users list and the group list
-users = PVEUser.dumpUsers()
-groups = PVEGroup.dumpGroups()
+    users = []
+    groups = []
 
-# Remove users already associated with a specific group
-for group in groups:
-    users = group.removePresentPVEUser(users)
+    # Extract the users list and the group list
+    users = PVEUser.dumpUsers()
+    groups = PVEGroup.dumpGroups()
 
-# The users list only contains the users not associated with any group
-for user in users:
-    user.createEnv("AzureAD")
+    # Remove users already associated with a specific group
+    for group in groups:
+        users = group.removePresentPVEUser(users)
+
+    # The users list only contains the users not associated with any group
+    for user in users:
+        user.createEnv("AzureAD")

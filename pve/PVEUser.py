@@ -1,5 +1,5 @@
 from pve.PVETools import runCli, DEBUG
-from pve.PVEMachine import PVEVm
+from pve.PVEMachine import PVEVm,PVELxc
 import json
 
 class PVEUser:
@@ -34,43 +34,47 @@ class PVEUser:
 
     @property
     def pool(self):
-        return "{}.{}".format(self.firstname, self.lastname)
+        return "_".join("{}.{}".format(self.firstname, self.lastname).split('\''))
 
     @property
     def pveusername(self):
-        return "{}@{}".format(self.username, self.realm)
+        return '_'.join("{}@{}".format(self.username, self.realm).split('\''))
     
-    @property
-    def vmNumber(self):
-        if self.vmList is not None:
-            return len(self.vmList)
-        return -1
-    
-    @property
-    def totalDiskUse(self):
-        if self.vmList is None:
+    def totalDiskUse(self,  limits=None, addVm=None):
+        if self.activeVmList is None and addVm is None:
             return -1
         totalDiskUse = 0
-        for vm in self.vmList:
-            totalDiskUse += vm.totalDiskSize
+        for vm in self.activeVmList:
+            if (limits is not None and vm.id not in limits['NOT_REVIEWED']):
+                totalDiskUse += vm.totalDiskSize
+        
+        if addVm is not None:
+            totalDiskUse == addVm.totalDiskSize
+
         return totalDiskUse
     
-    @property
-    def totalRAMUse(self):
-        if self.vmList is None:
+    def totalRAMUse(self, limits=None, addVm=None):
+        if self.activeVmList is None and addVm is None:
             return -1
         totalRAMUse = 0
-        for vm in self.vmList:
-            totalRAMUse += int(vm.memory, 10)
+        for vm in self.activeVmList:
+            if (limits is not None and vm.id not in limits['NOT_REVIEWED']):
+                totalRAMUse += int(vm.memory, 10)
+
+        if addVm is not None:
+            totalRAMUse += int(addVm.memory, 10)
         return totalRAMUse
     
-    @property
-    def totalCoreUse(self):
-        if self.vmList is None:
+    def totalCoreUse(self, limits=None, addVm=None):
+        if self.activeVmList is None and addVm is None:
             return -1
         totalCoreUse = 0
-        for vm in self.vmList:
-            totalCoreUse += int(vm.cores, 10)
+        for vm in self.activeVmList:
+            if (limits is not None and vm.id not in limits['NOT_REVIEWED']):
+                totalCoreUse += int(vm.cores, 10)
+        
+        if addVm is not None:
+            totalCoreUse += int(addVm.cores, 10)
         return totalCoreUse
 
     @staticmethod
@@ -127,22 +131,47 @@ class PVEUser:
 
 
     def loadVMInfo(self):
-        vmList = PVEVm.dumpVM()
-        lxcList = PVEVm.dumpVM()
-        self.vmList = [vm for vm in (vmList+lxcList) if vm.owner == self.pveusername]
+        vmList = PVEVm.dumpVM(minimal=True)
+        lxcList = PVELxc.dumpVM(minimal=True)
+        stdout, stderr = runCli('pvesh get /nodes/proxmox/tasks --start 0 --limit 5000 --source all --output-format=json-pretty')
+        if stderr != b'':
+            return None
+        logs = json.loads(stdout.decode())
 
-    def limitsCheck(self, limits):
+        self.vmList = []
+        self.activeVmList = []
+        for vm in lxcList + vmList:
+            for elt in logs:
+                if elt['id'] == vm.id:
+                    vm.owner = elt['user']
+                    if vm.owner == self.pveusername:
+                        DEBUG('\t[-] Owner for {} VM : {}\n'.format(vm.id, self.pveusername))
+                        if ((not hasattr(vm, 'template')) or vm.template == '0')  and vm.status():
+                            self.activeVmList.append(vm)
+                    break        
+        
+    def limitsCheck(self, limits, vm=None):
         DEBUG("\t[-] Checking user {} limits:\n".format(self.username))
-        DEBUG("\t\t [+]The following limits are applied : \n\t\t\t{}\n".format('\n\t\t\t'.join(json.dumps(limits['PERUSER'], indent=4).split('\n'))))
+        DEBUG("\t\t [+] The following limits are applied : \n\t\t\t{}\n".format('\n\t\t\t'.join(json.dumps(limits['PERUSER'], indent=4).split('\n'))))
         if self.pveusername in limits['ADMINISTRATORS']:
             DEBUG("\t\t [+] I see you got unlimited user here, everything all right\n")
             return True
         
-        disk =  self.totalDiskUse <= limits['PERUSER']['DISK']
+        disk =  self.totalDiskUse(limits=limits, addVm=vm)
+        ram = self.totalRAMUse(limits=limits, addVm=vm)
+        core = self.totalCoreUse(limits=limits, addVm=vm)
+        print("SUMMARY OF TOTAL RESOURCE CONSUMPTION:")
+        print("\tACTIVE RESOURCES : {}".format(" ".join([vm.id for vm in self.activeVmList])))
+        print("\tDISK  : {}/{}".format(disk, limits['PERUSER']['DISK']))
+        print("\tRAM   : {}/{}".format(ram, limits['PERUSER']['RAM']))
+        print("\tCORES : {}/{}".format(core, limits['PERUSER']['CORES']))
+
+        disk = disk <= limits['PERUSER']['DISK']
+        ram = ram <= limits['PERUSER']['RAM']
+        core = core <= limits['PERUSER']['CORES']
+
         DEBUG("\t\t[+] DISK   {}\n".format(disk))
-        ram = self.totalRAMUse <= limits['PERUSER']['RAM']
         DEBUG("\t\t[+] RAM    {}\n".format(ram))
-        core = self.totalCoreUse <= limits['PERUSER']['CORES']
         DEBUG("\t\t[+] CORES  {}\n".format(core))
         return disk and ram and core
         

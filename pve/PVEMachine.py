@@ -4,7 +4,7 @@ import subprocess
 
 class PVEGuest:
 
-    def __init__(self, id, path):
+    def __init__(self, id, path, minimal=False):
         try:
             file = open(path, 'r')
         except FileNotFoundError:
@@ -24,8 +24,10 @@ class PVEGuest:
 
 
         self.networks = self.getNetworks()
-        self.owner = self.getOwner()
         self.disks = self.getDisks()
+        if minimal is not True:
+            self.owner = self.getOwner()            
+        
 
     @property
     def totalDiskSize(self):
@@ -35,15 +37,12 @@ class PVEGuest:
         return totalDiskSize
 
     def getOwner(self):
-        stdout, stderr = runCli('pvesh get /nodes/proxmox/tasks --vmid {} --output-format=json-pretty'.format(self.id))
+        stdout, stderr = runCli('pvesh get /nodes/proxmox/tasks --start 0 --limit 1 --vmid {} --source all --output-format=json-pretty'.format(self.id))
         if stderr != b'':
             return None
         logs = json.loads(stdout.decode())
-
         for elt in logs:
-            if elt['type'] in ['qmcreate', 'vzcreate']:
-                return elt['user']
-        
+            return elt['user']
         return None
 
     
@@ -163,7 +162,7 @@ class PVEGuest:
 
     def limitsCheck(self, limits):
         DEBUG('\t[-] Checking limits for \n'.format(self.id))
-        DEBUG("\t\t [+]The following limits are applied : \n\t\t\t{}\n".format('\n\t\t\t'.join(json.dumps(limits, indent=4).split('\n'))))
+        DEBUG("\t\t [+] The following limits are applied : \n\t\t\t{}\n".format('\n\t\t\t'.join(json.dumps(limits, indent=4).split('\n'))))
         ram = self.matchRAMLimit(limits)
         DEBUG('\t\t[+] RAM           {}\n'.format(ram))
         disk = self.matchDiskLimit(limits)
@@ -175,36 +174,39 @@ class PVEGuest:
         mp = self.matchMountPointLimit(limits)
         DEBUG('\t\t[+] MOUNTPOINT    {}\n'.format(mp))
         bootstart = self.matchBootStartLimit(limits)
-        DEBUG('\t\t[+] BOOTSTART     {}\n', format(bootstart))
+        DEBUG('\t\t[+] BOOTSTART     {}\n'.format(bootstart))
         return ram and disk and network and cores and mp and bootstart
 
 
 class PVEVm(PVEGuest):
-    def __init__(self, id):
-        PVEGuest.__init__(self, id, '/etc/pve/nodes/proxmox/qemu-server/{}.conf'.format(id))
+    def __init__(self, id, minimal=False):
+        PVEGuest.__init__(self, id, '/etc/pve/nodes/proxmox/qemu-server/{}.conf'.format(id), minimal)
         try:
             self.hookscript
         except AttributeError:
             runCli('qm set {} --hookscript local:snippets/confcheck_hookscript.pl'.format(self.id))
 
     @staticmethod
-    def dumpVM():
-        stdout, stderr = runCli('pvesh get /nodes/proxmox/qemu --output-format=json-pretty')
-        if stderr != b'':
-            return []
-        vmList = json.loads(stdout)
-        vms = [PVEVm(vm['vmid']) for vm in vmList]
+    def dumpVM(minimal=False):
+        file = open('/etc/pve/.vmlist', 'r')
+        vmData = json.loads(file.read())
+        file.close()
+        vms = [PVEVm(key, minimal=minimal) for key, values in vmData['ids'].items() if values['type'] == 'qemu']
         return vms
     
     def selfDestroy(self):
         DEBUG('\t[x] Stop and locking VM {}\n'.format(self.id))
         stdout, stderr = runCli('qm stop {}'.format(self.id))
-        stdout, stderr = runCli('qm set {} --lock create'.format(self.id))
-
+        #stdout, stderr = runCli('qm set {} --lock create'.format(self.id))
+    
+    def status(self):
+        stdout, stderr = runCli('qm status {}'.format(self.id))
+        if stderr == b'':
+            return b'stopped' not in stdout
 
 class PVELxc(PVEGuest):
-    def __init__(self, id):
-        PVEGuest.__init__(self, id, '/etc/pve/nodes/proxmox/lxc/{}.conf'.format(id))
+    def __init__(self, id, minimal=False):
+        PVEGuest.__init__(self, id, '/etc/pve/nodes/proxmox/lxc/{}.conf'.format(id), minimal)
         # LXC can have unlimited core... Must check that
         try:
             self.cores
@@ -221,21 +223,25 @@ class PVELxc(PVEGuest):
             runCli('pct set {} --hookscript local:snippets/confcheck_hookscript.pl'.format(self.id))
     
     @staticmethod
-    def dumpVM():
-        stdout, stderr = runCli('pvesh get /nodes/proxmox/lxc --output-format=json-pretty')
-        if stderr != b'':
-            return []
-        vmList = json.loads(stdout)
-        vms = [PVEVm(vm['vmid']) for vm in vmList]
+    def dumpVM(minimal=False):
+        file = open('/etc/pve/.vmlist', 'r')
+        vmData = json.loads(file.read())
+        file.close()
+        vms = [PVELxc(key, minimal=minimal) for key, values in vmData['ids'].items() if values['type'] == 'lxc']
         return vms
     
     def selfDestroy(self):
         DEBUG('\t[x] Stop and locking LXC {}\n'.format(self.id))
         stdout, stderr = runCli('pct stop {}'.format(self.id))
-        stdout, stderr = runCli('pct set {} --lock destroyed'.format(self.id))
+        #stdout, stderr = runCli('pct set {} --lock destroyed'.format(self.id))
 
     def limitsCheck(self, limits):
         result = PVEGuest.limitsCheck(self, limits)
         unpriv = self.unprivileged == '1' or limits['LXCPRIVILEGED']
         DEBUG('\t\t[+] UNPRIVILEGED  {}\n'.format(unpriv))
         return result and unpriv
+
+    def status(self):
+        stdout, stderr = runCli('pct status {}'.format(self.id))
+        if stderr == b'':
+            return b'stopped' not in stdout

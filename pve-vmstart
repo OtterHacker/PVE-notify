@@ -7,6 +7,7 @@ import json
 import subprocess
 import sys
 import os
+import time
 
 def buildLimits():
     try:
@@ -26,7 +27,7 @@ def buildLimits():
                         adminList.append(user)
 
     limits['ADMINISTRATORS'] = adminList
-
+    limits['NOT_REVIEWED'] = [int(elt, 10) for elt in limits['NOT_REVIEWED']]
     return limits
 
 def checkVMLimits(id, vm):
@@ -34,8 +35,36 @@ def checkVMLimits(id, vm):
     limitCheck = vm.limitsCheck(limits)
     return limitCheck
 
+def checkUserResources(id, vm):
+    DEBUG('\t[+] Checking user resource usage\n')
+    limits = buildLimits()
+    owner = vm.owner
+    if owner in limits['ADMINISTRATORS']:
+        DEBUG("\t\t[+] I see you got unlimited user here, everything all right\n")
+        return True
+    
+    if vm.id in limits['NOT_REVIEWED']:
+        DEBUG("\t\t[+] I see you got unlimited VM here, everything all right\n")
+        return True
+
+    owner = PVEUser(
+        {
+            "userid": owner,
+            "enable": True,
+            "expire": 1
+        }
+    )
+
+    DEBUG("\t[+] VM owner : {}\n".format(owner.pveusername))
+    owner.loadVMInfo()
+    limitCheck = owner.limitsCheck(limits, vm)
+    return limitCheck
+
 if __name__ == "__main__":
     DEBUG('[o] New entry from pve-vmstart : {}\n'.format(datetime.now()))
+    stdout, stderr = runCli('pvesh get /nodes/proxmox/tasks --vmid 151 --start 0 --source all --limit 10 --output-format=json-pretty')
+    
+    DEBUG('Here is the tasks : \n{}\nAnd thats it'.format(stdout.decode()))
     if len(sys.argv) == 2:
         vmid = int(sys.argv[1], 10)
         DEBUG('[-] Starting analysis of {}\n'.format( vmid))
@@ -55,7 +84,13 @@ if __name__ == "__main__":
         check = checkVMLimits(vmid, vm)
         if check is True:
             DEBUG('\t[+] Check of VM configuration pass\n')
-            exit(0)
+            check = checkUserResources(vmid, vm)
+            if check is True:
+                DEBUG('\t[+] Check of user resource usage pass\n')
+                exit(0)
+            else:
+                DEBUG('\t[x] Check of user resource usage failed\n')
+                exit(2)
         else:
             DEBUG('\t[x] Check of VM configuration failed\n')
             exit(1)

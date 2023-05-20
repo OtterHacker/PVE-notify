@@ -11,8 +11,6 @@
 use strict;
 use warnings;
 
-print "GUEST HOOK: " . join(' ', @ARGV). "\n";
-
 # First argument is the vmid
 
 my $vmid = shift;
@@ -26,8 +24,13 @@ if ($phase eq 'pre-start') {
     # First phase 'pre-start' will be executed before the guest
     # is started. Exiting with a code != 0 will abort the start
     my $ec = system("/usr/local/sbin/proxmox-binaries/pve-vmstart $vmid");
-    if($ec != 0){
-        print "Your configuration does not match the authorized one... \n";
+    if($ec == 512){
+        print("Too much VM running... Exceeding allocated resources.\n");
+        exit(1);
+    }
+    
+    if($ec == 256){
+        print "Your configuration does not match the authorized one.\n";
         exit(1);
     }
     # print "preparations failed, aborting."
@@ -36,7 +39,7 @@ if ($phase eq 'pre-start') {
 } elsif ($phase eq 'post-start') {
 
     # Second phase 'post-start' will be executed after the guest
-    # successfully started.
+    # successfully started.    
 
 } elsif ($phase eq 'pre-stop') {
 

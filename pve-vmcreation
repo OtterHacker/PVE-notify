@@ -72,30 +72,6 @@ def checkVMLimits(id, vm):
         vm.selfDestroy()
     return limitCheck
 
-def checkUserResources(id, vm):
-    limits = buildLimits()
-    owner = vm.owner
-    if owner in limits['ADMINISTRATORS']:
-        DEBUG("\t\t[+] I see you got unlimited user here, everything all right\n")
-        return True
-    
-    if vm.id in limits['NOT_REVIEWED']:
-        DEBUG("\t\t[+] I see you got unlimited VM here, everything all right\n")
-        return True
-
-    users = PVEUser.dumpUsers()
-    for user in users:
-        if user.pveusername == owner:
-            owner = user
-            break
-    owner.loadVMInfo()
-    limitCheck = owner.limitsCheck(limits)
-    if limitCheck is not True:
-        vm.selfDestroy()
-
-    return limitCheck
-
-
 if __name__ == "__main__":
     DEBUG('[o] New entry from pve-vmcreation : {}\n'.format(datetime.now()))
     if len(sys.argv) == 3:
@@ -121,10 +97,5 @@ if __name__ == "__main__":
         check = checkVMLimits(vmid, vm)
         if check is True:
             DEBUG('\t[+] Check of VM configuration pass\n')
-            check = checkUserResources(vmid, vm)
-            if check:
-                DEBUG('\t[+] Check of user ressource usage pass\n')
-            else:
-                DEBUG('\t[x] Check of user ressource usage failed\n')
         else:
             DEBUG('\t[+] Check of VM configuration failed\n')

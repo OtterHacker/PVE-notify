@@ -10,7 +10,7 @@ Please, read these warnings and the whole README to understand the potential imp
 
 > Whatever the mess you've done with this script, I cannot be held responsible for it. Either, I cannot be held responsible for any security incident related to one of these scripts.
 
-> If a VM does not match the hardware description set, it will be automatically locked. To quickly unlock it, run the following command : `echo $VMID >> ./conf/tempVMBypass ; qm unlock $VMID` or `echo $VMID >> ./conf/tempVMBypass ; pct unlock $VMID`
+> If a VM does not match the hardware description set, it will be unable to start
 
 # Scripts
 ## PVE-inotify
@@ -51,14 +51,3 @@ The `conf/limits.json` file allows defining the VM restriction. At the moment th
 - `PERUSER.DISK` : Maximal disk size per user (cumulate all `VM` and `LXC`)
 - `PERUSER.RAM` : Maximal RAM size per user (cumulate all `VM` and `LXC`)
 - `PERUSER.CORE` : Maximal core size per user (cumulate all `VM` and `LXC`)
-
-## Temporary bypass
-When a `VM` does not comply with the restriction, the resource is locked until the configuration is modified.
-
-In order to unlock the `VM` and allows the user to modify the configuration, a temporary restriction bypass must be done.
-
-This can be done through the `conf/tempVMBypass`. Verification for `VM` id contained in this file will be skipped on the next run. Thus, to unlock a `VM` the following command can be used:
-```bash
-echo $VMID >> ./conf/tempVMBypass ; qm unlock $VMID
-```
-> THIS IS A TEMPORARY BYPASS ! IT ONLY WORK FOR ONE ITERATION. If you want a `VM` to never be checked, use the `NOT_REVIEWED` element in the `limits.json` file.
